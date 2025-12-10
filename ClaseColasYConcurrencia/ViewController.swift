@@ -9,8 +9,32 @@ import UIKit
 
 /// **DispatchQueue - Sistema de Colas de Despacho de GCD (Grand Central Dispatch)**
 ///
-/// Gestiona la ejecución de tareas de forma concurrente o serial usando un pool de threads. (Grupo de threads reutilizables)
-/// Las colas son estructuras FIFO (First In, First Out) que ejecutan bloques de código.
+/// DispatchQueue es una cola (queue) que almacena tareas en orden FIFO (First In, First Out).
+/// Gestiona cómo se ejecutan esas tareas: de forma serial (una por una) o concurrente (múltiples simultáneas).
+/// Para ejecutarlas, usa un pool de threads (grupo de threads reutilizables).
+///
+/// **Flujo de ejecución:**
+/// ```
+/// ┌──────────────┐      ┌───────────┐      ┌──────────────┐      ┌──────────────┐      ┌─────┐
+/// │  Tu código   │ ───→ │   Cola    │ ───→ │  Scheduler   │ ───→ │ Pool Threads │ ───→ │ CPU │
+/// │              │      │   FIFO    │      │  (asigna)    │      │              │      │     │
+/// │ .async { }   │      │ [T1,T2,T3]│      │              │      │  Thread 1    │      │     │
+/// │              │      │           │      │   Decide     │      │  Thread 2    │      │     │
+/// │              │      │           │      │   qué thread │      │  Thread 3    │      │     │
+/// └──────────────┘      └───────────┘      └──────────────┘      └──────────────┘      └─────┘
+///
+/// 1. Envías tarea a la cola
+/// 2. Cola almacena en orden FIFO
+/// 3. Scheduler toma tarea y busca thread disponible del pool
+/// 4. Thread del pool ejecuta la tarea
+/// 5. CPU procesa
+/// ```
+///
+/// **Componentes:**
+/// - **Cola**: Almacena tareas en orden FIFO
+/// - **Scheduler**: Asigna tareas a threads disponibles (automático, no lo controlas)
+/// - **Pool de Threads**: Threads reutilizables del sistema
+/// - **Serial**: 1 thread ejecuta una por una | **Concurrent**: múltiples threads simultáneamente
 ///
 /// **Tipos de colas:**
 /// - `DispatchQueue.main` - Cola serial para UI (thread principal)
@@ -41,95 +65,29 @@ import UIKit
 /// }
 /// ```
 class ViewController: UIViewController {
-    
-    private let imageView: UIImageView = {
-        let iv = UIImageView()
-        iv.contentMode = .scaleAspectFit
-        iv.backgroundColor = .lightGray
-        return iv
-    }()
-    
-    private let progressLabel: UILabel = {
-        let label = UILabel()
-        label.text = "Esperando..."
-        label.textAlignment = .center
-        return label
-    }()
-    
-    private let downloadButton: UIButton = {
-        let button = UIButton(type: .system)
-        button.setTitle("1. Descargar (async)", for: .normal)
-        return button
-    }()
-    
-    private let processSerialButton: UIButton = {
-        let button = UIButton(type: .system)
-        button.setTitle("2. Procesar Serial", for: .normal)
-        return button
-    }()
-    
-    private let processParallelButton: UIButton = {
-        let button = UIButton(type: .system)
-        button.setTitle("3. Procesar Paralelo", for: .normal)
-        return button
-    }()
-    
-    private let syncAsyncButton: UIButton = {
-        let button = UIButton(type: .system)
-        button.setTitle("4. sync vs async", for: .normal)
-        return button
-    }()
-    
-    private let groupButton: UIButton = {
-        let button = UIButton(type: .system)
-        button.setTitle("5. DispatchGroup", for: .normal)
-        return button
-    }()
-    
-    private let serialConcurrentButton: UIButton = {
-        let button = UIButton(type: .system)
-        button.setTitle("6. Serial vs Concurrent", for: .normal)
-        return button
-    }()
+    @IBOutlet weak var imageView: UIImageView!
+    @IBOutlet weak var progressLabel: UILabel!
+    @IBOutlet weak var downloadButton: UIButton!
+    @IBOutlet weak var processSerialButton: UIButton!
+    @IBOutlet weak var processParallelButton: UIButton!
+    @IBOutlet weak var syncAsyncButton: UIButton!
+    @IBOutlet weak var groupButton: UIButton!
+    @IBOutlet weak var serialConcurrentButton: UIButton!
     
     override func viewDidLoad() {
         super.viewDidLoad()
         setupUI()
-        
-        downloadButton.addTarget(self, action: #selector(downloadImageTapped), for: .touchUpInside)
-        processSerialButton.addTarget(self, action: #selector(processSerialTapped), for: .touchUpInside)
-        processParallelButton.addTarget(self, action: #selector(processParallelTapped), for: .touchUpInside)
-        syncAsyncButton.addTarget(self, action: #selector(syncAsyncTapped), for: .touchUpInside)
-        groupButton.addTarget(self, action: #selector(groupTapped), for: .touchUpInside)
-        serialConcurrentButton.addTarget(self, action: #selector(serialConcurrentTapped), for: .touchUpInside)
     }
     
     private func setupUI() {
         view.backgroundColor = .white
-        view.addSubview(imageView)
-        view.addSubview(progressLabel)
-        view.addSubview(downloadButton)
-        view.addSubview(processSerialButton)
-        view.addSubview(processParallelButton)
-        view.addSubview(syncAsyncButton)
-        view.addSubview(groupButton)
-        view.addSubview(serialConcurrentButton)
-        
-        imageView.frame = CGRect(x: 50, y: 100, width: 300, height: 200)
-        progressLabel.frame = CGRect(x: 50, y: 320, width: 300, height: 30)
-        downloadButton.frame = CGRect(x: 100, y: 370, width: 200, height: 44)
-        processSerialButton.frame = CGRect(x: 100, y: 424, width: 200, height: 44)
-        processParallelButton.frame = CGRect(x: 100, y: 478, width: 200, height: 44)
-        syncAsyncButton.frame = CGRect(x: 100, y: 532, width: 200, height: 44)
-        groupButton.frame = CGRect(x: 100, y: 586, width: 200, height: 44)
-        serialConcurrentButton.frame = CGRect(x: 100, y: 640, width: 200, height: 44)
     }
     
     // MARK: - 1. async - Background sin bloquear UI
     
     /// **DEMUESTRA:** Tarea pesada en background + actualizar UI
     /// **PATRÓN:** background → main
-    @objc private func downloadImageTapped() {
+    @IBAction func downloadImageTapped(_ sender: Any) {
         print("\n🚀 EJEMPLO 1: async - Background sin bloquear UI")
         
         // Actualizar UI (siempre en main)
@@ -156,7 +114,7 @@ class ViewController: UIViewController {
     
     /// **DEMUESTRA:** Procesar 1000 números UNO POR UNO (1 core)
     /// **MÉTODO:** For loop tradicional en background
-    @objc private func processSerialTapped() {
+    @IBAction func processSerialTapped(_ sender: Any) {
         print("\n📝 EJEMPLO 2: Procesamiento SERIAL (sin paralelismo)")
         
         DispatchQueue.main.async {
@@ -188,7 +146,7 @@ class ViewController: UIViewController {
     
     /// **DEMUESTRA:** Procesar 1000 números EN PARALELO (múltiples cores)
     /// **MÉTODO:** concurrentPerform aprovecha todos los cores
-    @objc private func processParallelTapped() {
+    @IBAction func processParallelTapped(_ sender: Any) {
         print("\n⚡️ EJEMPLO 3: Procesamiento PARALELO (múltiples cores)")
         
         DispatchQueue.main.async {
@@ -221,7 +179,7 @@ class ViewController: UIViewController {
     // MARK: - 4. sync vs async
     
     /// **DEMUESTRA:** Diferencia entre bloquear (.sync) y no bloquear (.async)
-    @objc private func syncAsyncTapped() {
+    @IBAction func syncAsyncTapped(_ sender: Any) {
         print("\n📊 EJEMPLO 4: sync vs async")
         
         // SYNC - BLOQUEA
@@ -251,7 +209,7 @@ class ViewController: UIViewController {
     
     /// **DEMUESTRA:** Esperar a que múltiples tareas terminen
     /// **PATRÓN:** enter() → tarea → leave() → notify()
-    @objc private func groupTapped() {
+    @IBAction func groupTapped(_ sender: Any) {
         print("\n🔄 EJEMPLO 5: DispatchGroup - Coordinar múltiples tareas")
         
         DispatchQueue.main.async {
@@ -295,7 +253,7 @@ class ViewController: UIViewController {
     // MARK: - 6. Serial vs Concurrent
     
     /// **DEMUESTRA:** Diferencia entre ejecutar en orden vs paralelo
-    @objc private func serialConcurrentTapped() {
+    @IBAction func serialConcurrentTapped(_ sender: Any) {
         print("\n⚖️ EJEMPLO 6: Serial vs Concurrent")
         
         // SERIAL - Orden garantizado (1→2→3)
@@ -321,7 +279,6 @@ class ViewController: UIViewController {
             self.progressLabel.text = "✅ Ver consola"
         }
     }
-    
     // MARK: - Helper
     
     /// Simula cálculo complejo para demostrar paralelismo
